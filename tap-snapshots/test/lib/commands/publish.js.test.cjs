@@ -87,23 +87,25 @@ Array [
 
 exports[`test/lib/commands/publish.js TAP json > new package json 1`] = `
 {
-  "id": "@npmcli/test-package@1.0.0",
-  "name": "@npmcli/test-package",
-  "version": "1.0.0",
-  "size": "{size}",
-  "unpackedSize": 95,
-  "shasum": "{sha}",
-  "integrity": "{integrity}",
-  "filename": "npmcli-test-package-1.0.0.tgz",
-  "files": [
-    {
-      "path": "package.json",
-      "size": "{size}",
-      "mode": 420
-    }
-  ],
-  "entryCount": 1,
-  "bundled": []
+  "@npmcli/test-package": {
+    "id": "@npmcli/test-package@1.0.0",
+    "name": "@npmcli/test-package",
+    "version": "1.0.0",
+    "size": "{size}",
+    "unpackedSize": 95,
+    "shasum": "{sha}",
+    "integrity": "{integrity}",
+    "filename": "npmcli-test-package-1.0.0.tgz",
+    "files": [
+      {
+        "path": "package.json",
+        "size": "{size}",
+        "mode": 420
+      }
+    ],
+    "entryCount": 1,
+    "bundled": []
+  }
 }
 `
 
@@ -153,7 +155,6 @@ Object {
   "main": "./index.js",
   "man": Array [
     "man/man1/npm-access.1",
-    "man/man1/npm-adduser.1",
     "man/man1/npm-audit.1",
     "man/man1/npm-bugs.1",
     "man/man1/npm-cache.1",
@@ -204,8 +205,6 @@ Object {
     "man/man1/npm-search.1",
     "man/man1/npm-set.1",
     "man/man1/npm-shrinkwrap.1",
-    "man/man1/npm-star.1",
-    "man/man1/npm-stars.1",
     "man/man1/npm-start.1",
     "man/man1/npm-stop.1",
     "man/man1/npm-team.1",
@@ -215,7 +214,6 @@ Object {
     "man/man1/npm-undeprecate.1",
     "man/man1/npm-uninstall.1",
     "man/man1/npm-unpublish.1",
-    "man/man1/npm-unstar.1",
     "man/man1/npm-update.1",
     "man/man1/npm-version.1",
     "man/man1/npm-view.1",
