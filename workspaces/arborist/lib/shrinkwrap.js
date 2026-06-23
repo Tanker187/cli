@@ -10,6 +10,12 @@
 
 const localeCompare = require('@isaacs/string-locale-compare')('en')
 const defaultLockfileVersion = 3
+// Bumped to 4 only when a node carries a patch record, so older clients abort.
+const patchedLockfileVersion = 4
+// packageExtensions provenance also forces lockfileVersion 4 so older clients abort rather than silently dropping the repaired graph.
+// Both features share version 4: they are root-owned graph repairs an old npm must not drop.
+const packageExtensionsLockfileVersion = 4
+const maxLockfileVersion = 4
 
 // for comparing nodes to yarn.lock entries
 const mismatch = (a, b) => a && b && a !== b
@@ -107,6 +113,9 @@ const nodeMetaKeys = [
   'integrity',
   'inBundle',
   'hasInstallScript',
+  'patched',
+  'packageExtensionsApplied',
+  'npmExtensionApplied',
 ]
 
 const metaFieldFromPkg = (pkg, key) => {
@@ -347,6 +356,8 @@ class Shrinkwrap {
   reset () {
     this.tree = null
     this.#awaitingUpdate = new Map()
+    this.packageExtensionsHash = null
+    this.npmExtensionHash = null
     const lockfileVersion = this.lockfileVersion || defaultLockfileVersion
     this.originalLockfileVersion = lockfileVersion
 
@@ -458,6 +469,13 @@ class Shrinkwrap {
       this.ancientLockfile = false
       data = {}
     }
+    // refuse lockfiles newer than we understand so we never drop a patched or repaired graph we cannot read
+    if (data.lockfileVersion > maxLockfileVersion) {
+      throw Object.assign(
+        new Error(`Unsupported lockfileVersion ${data.lockfileVersion}. This npm only supports up to ${maxLockfileVersion}. Please upgrade npm.`),
+        { code: 'ELOCKFILEVERSION' }
+      )
+    }
     // auto convert v1 lockfiles to v3
     // leave v2 in place unless configured
     // v3 by default
@@ -477,6 +495,11 @@ class Shrinkwrap {
     }
 
     this.originalLockfileVersion = data.lockfileVersion
+
+    // the canonical packageExtensions hash, if the lockfile recorded one on its root entry
+    this.packageExtensionsHash = data.packages?.['']?.packageExtensionsHash || null
+    // the .npm-extension file hash, if the lockfile recorded one on its root entry
+    this.npmExtensionHash = data.packages?.['']?.npmExtensionHash || null
 
     // use default if it wasn't explicitly set, and the current file is
     // less than our default.  otherwise, keep whatever is in the file,
@@ -895,6 +918,14 @@ class Shrinkwrap {
         this.tree.target,
         this.path,
         this.resolveOptions)
+      // record the canonical packageExtensions hash on the root entry so npm ci can detect stale extension state
+      if (this.packageExtensionsHash) {
+        root.packageExtensionsHash = this.packageExtensionsHash
+      }
+      // record the .npm-extension file hash on the root entry for the same reason
+      if (this.npmExtensionHash) {
+        root.npmExtensionHash = this.npmExtensionHash
+      }
       this.data.packages = {}
       if (Object.keys(root).length) {
         this.data.packages[''] = root
@@ -905,10 +936,30 @@ class Shrinkwrap {
           continue
         }
         const loc = relpath(this.path, node.path)
-        this.data.packages[loc] = Shrinkwrap.metaFromNode(
+        // Drop lockfile entries for extraneous nodes outside node_modules that
+        // are direct fsChildren of the root (or detached link targets). These
+        // are stale top-level entries: a workspace or file: dep removed from
+        // the root manifest, or whose directory was deleted. Extraneous
+        // fsChildren nested under another package (e.g. a file: dep of another
+        // file: dep) are kept so `npm ci` can resolve the parent's dependency.
+        if (node.extraneous && !/(^|\/)node_modules\//.test(loc) && loc !== 'node_modules' &&
+          (!node.fsParent || node.fsParent.isRoot)) {
+          continue
+        }
+        const meta = Shrinkwrap.metaFromNode(
           node,
           this.path,
           this.resolveOptions)
+        // Skip inert nodes — these are optional deps that failed to load
+        // (e.g. 404 from a proxy registry that hasn't cached the package,
+        // or incomplete manifest missing version field).
+        // #pruneFailedOptional marks them inert so they won't be reified;
+        // writing them to the lockfile produces invalid entries like
+        // {"optional": true} that cause "Invalid Version:" errors.
+        if (node.inert && !node.package.version) {
+          continue
+        }
+        this.data.packages[loc] = meta
       }
     } else if (this.#awaitingUpdate.size > 0) {
       for (const loc of this.#awaitingUpdate.keys()) {
@@ -919,6 +970,22 @@ class Shrinkwrap {
     // if we haven't set it by now, use the default
     if (!this.lockfileVersion) {
       this.lockfileVersion = defaultLockfileVersion
+    }
+    // patched nodes force lockfileVersion 4 so older clients abort the install
+    // the hidden lockfile is an internal cache pinned to version 3, so it never drives this upgrade
+    const hasPatched = !this.hiddenLockfile &&
+      Object.values(this.data.packages).some(p => p.patched)
+    if (hasPatched && this.lockfileVersion < patchedLockfileVersion) {
+      log.warn('shrinkwrap', `patchedDependencies requires lockfileVersion ${patchedLockfileVersion}; upgrading the lockfile from version ${this.lockfileVersion}.`)
+      this.lockfileVersion = patchedLockfileVersion
+    }
+    // packageExtensions and .npm-extension state likewise force lockfileVersion 4 so older clients abort instead of dropping the repaired graph
+    const hasExtensionState = !this.hiddenLockfile &&
+      (this.packageExtensionsHash || this.npmExtensionHash ||
+        Object.values(this.data.packages).some(p => p.packageExtensionsApplied || p.npmExtensionApplied))
+    if (hasExtensionState && this.lockfileVersion < packageExtensionsLockfileVersion) {
+      log.warn('shrinkwrap', `manifest extensions require lockfileVersion ${packageExtensionsLockfileVersion}; upgrading the lockfile from version ${this.lockfileVersion}.`)
+      this.lockfileVersion = packageExtensionsLockfileVersion
     }
     this.data.lockfileVersion = this.lockfileVersion
 

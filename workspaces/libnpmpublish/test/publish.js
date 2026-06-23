@@ -57,7 +57,7 @@ t.test('basic publish - no npmVersion', async t => {
         },
       },
     },
-    access: 'public',
+    access: null,
     _attachments: {
       'libnpmpublish-test-1.0.0.tgz': {
         content_type: 'application/octet-stream',
@@ -73,6 +73,77 @@ t.test('basic publish - no npmVersion', async t => {
     npmVersion: null,
   })
   t.ok(ret, 'publish succeeded')
+})
+
+t.test('publish strips patchedDependencies from the registry manifest', async t => {
+  const { publish } = t.mock('..')
+  const registry = new MockRegistry({
+    tap: t,
+    registry: opts.registry,
+    authorization: token,
+  })
+  const manifest = {
+    name: 'libnpmpublish-test',
+    version: '1.0.0',
+    description: 'test libnpmpublish package',
+    patchedDependencies: { 'lodash@4.17.21': 'patches/lodash@4.17.21.patch' },
+  }
+  const spec = npa(manifest.name)
+  // patchedDependencies must not appear in the published version metadata
+  const { patchedDependencies, ...clean } = manifest
+
+  const packument = {
+    _id: manifest.name,
+    name: manifest.name,
+    description: manifest.description,
+    'dist-tags': {
+      latest: '1.0.0',
+    },
+    versions: {
+      '1.0.0': {
+        _id: `${manifest.name}@${manifest.version}`,
+        _nodeVersion: process.versions.node,
+        ...clean,
+        dist: {
+          shasum,
+          integrity: integrity.sha512[0].toString(),
+          tarball: 'http://mock.reg/libnpmpublish-test/-/libnpmpublish-test-1.0.0.tgz',
+        },
+      },
+    },
+    access: null,
+    _attachments: {
+      'libnpmpublish-test-1.0.0.tgz': {
+        content_type: 'application/octet-stream',
+        data: tarData.toString('base64'),
+        length: tarData.length,
+      },
+    },
+  }
+
+  registry.nock.put(`/${spec.escapedName}`, packument).reply(201, {})
+  const ret = await publish(manifest, tarData, {
+    ...opts,
+    npmVersion: null,
+  })
+  t.ok(ret, 'publish succeeded with patchedDependencies stripped')
+})
+
+t.test('fails when publishing a package with packageExtensions', async t => {
+  const { publish } = t.mock('..')
+  // no registry interceptor: the publish must fail before any request is made
+  const manifest = {
+    name: 'libnpmpublish-test',
+    version: '1.0.0',
+    description: 'test libnpmpublish package',
+    packageExtensions: { 'foo@1': { dependencies: { bar: '^1.0.0' } } },
+  }
+
+  await t.rejects(
+    publish(manifest, tarData, { ...opts, npmVersion: null }),
+    { code: 'EPACKAGEEXTENSIONS', message: /must not be published/ },
+    'refuses to publish a package containing packageExtensions'
+  )
 })
 
 t.test('scoped publish', async t => {
@@ -110,7 +181,7 @@ t.test('scoped publish', async t => {
         },
       },
     },
-    access: 'public',
+    access: null,
     _attachments: {
       '@npmcli/libnpmpublish-test-1.0.0.tgz': {
         content_type: 'application/octet-stream',
@@ -302,7 +373,7 @@ t.test('other error code', async t => {
   const packument = {
     name: 'libnpmpublish',
     description: 'some stuff',
-    access: 'public',
+    access: null,
     _id: 'libnpmpublish',
     'dist-tags': {
       latest: '1.0.0',
@@ -546,6 +617,7 @@ t.test('publish existing package with provenance in gha', async t => {
 
   const ret = await publish(manifest, tarData, {
     ...opts,
+    access: 'public',
     provenance: true,
     fulcioURL: fulcioURL,
     rekorURL: rekorURL,
@@ -766,7 +838,7 @@ t.test('user-supplied provenance - success', async t => {
         },
       },
     },
-    access: 'public',
+    access: null,
     _attachments: {
       '@npmcli/libnpmpublish-test-1.0.0.tgz': {
         content_type: 'application/octet-stream',
@@ -1091,6 +1163,7 @@ t.test('publish existing package with provenance in gitlab', async t => {
 
   const ret = await publish(manifest, tarData, {
     ...opts,
+    access: 'public',
     provenance: true,
     fulcioURL: fulcioURL,
     rekorURL: rekorURL,
@@ -1103,6 +1176,31 @@ t.test('publish existing package with provenance in gitlab', async t => {
       // eslint-disable-next-line max-len
       `Provenance statement published to transparency log: https://search.sigstore.dev/?logIndex=${logIndex}`],
   ])
+})
+
+t.test('stage publish returns stageId', async t => {
+  const { publish } = t.mock('..')
+  const registry = new MockRegistry({
+    tap: t,
+    registry: opts.registry,
+    authorization: token,
+  })
+  const manifest = {
+    name: '@npmcli/libnpmpublish-test',
+    version: '1.0.0',
+    description: 'test libnpmpublish package',
+  }
+  const spec = npa(manifest.name)
+
+  registry.nock
+    .post(`/-/stage/package/${spec.escapedName}`)
+    .reply(201, { stageId: 'test-stage-id' })
+
+  const ret = await publish(manifest, tarData, {
+    ...opts,
+    stage: true,
+  })
+  t.equal(ret.stageId, 'test-stage-id', 'stageId returned from response')
 })
 
 t.test('gitlab provenance, no token available', async t => {

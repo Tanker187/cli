@@ -97,6 +97,7 @@ Object {
 exports[`test/lib/docs.js TAP command list > commands 1`] = `
 Array [
   "access",
+  "approve-scripts",
   "audit",
   "bugs",
   "cache",
@@ -104,6 +105,7 @@ Array [
   "completion",
   "config",
   "dedupe",
+  "deny-scripts",
   "deprecate",
   "diff",
   "dist-tag",
@@ -131,6 +133,7 @@ Array [
   "outdated",
   "owner",
   "pack",
+  "patch",
   "ping",
   "pkg",
   "prefix",
@@ -146,6 +149,7 @@ Array [
   "sbom",
   "search",
   "set",
+  "stage",
   "start",
   "stop",
   "team",
@@ -186,7 +190,7 @@ safer to use a registry-provided authentication bearer token stored in the
 
 * Default: 'public' for new packages, existing packages it will not change the
   current level
-* Type: null, "restricted", or "public"
+* Type: null, "restricted", "public", or "private"
 
 If you do not want your scoped package to be publicly viewable (and
 installable) set \`--access=restricted\`.
@@ -198,6 +202,8 @@ packages. Specifying a value of \`restricted\` or \`public\` during publish will
 change the access for an existing package the same way that \`npm access set
 status\` would.
 
+The value \`private\` is an alias for \`restricted\`.
+
 
 
 #### \`all\`
@@ -205,26 +211,94 @@ status\` would.
 * Default: false
 * Type: Boolean
 
-When running \`npm outdated\` and \`npm ls\`, setting \`--all\` will show all
-outdated or installed packages, rather than only those directly depended
-upon by the current project.
+Show or act on all packages, not just the ones your project directly depends
+on. For \`npm outdated\` and \`npm ls\` this lists every outdated or installed
+package. For \`npm approve-scripts\` and \`npm deny-scripts\` it selects every
+package with pending install scripts.
+
+
+
+#### \`allow-directory\`
+
+* Default: "all"
+* Type: "all", "none", or "root"
+
+Limits the ability for npm to install dependencies from directories. That
+is, dependencies that point to a directory instead of a version or semver
+range. Please note that this could leave your tree incomplete and some
+packages may not function as intended or designed. Changing this setting
+will not remove dependencies that are already installed.
+
+\`all\` allows any directories to be installed. \`none\` prevents any
+directories from being installed. \`root\` only allows directories defined in
+your project's package.json to be installed. Also allows directory
+dependencies to be used for other commands like \`npm view\`
+
+
+
+#### \`allow-file\`
+
+* Default: "all"
+* Type: "all", "none", or "root"
+
+Limits the ability for npm to install dependencies from tarball files. That
+is, dependencies that point to a local tarball file instead of a version or
+semver range. Please note that this could leave your tree incomplete and
+some packages may not function as intended or designed. Changing this
+setting will not remove dependencies that are already installed.
+
+\`all\` allows any tarball file to be installed. \`none\` prevents any tarball
+file from being installed. \`root\` only allows tarball files defined in your
+project's package.json to be installed. Also allows tarball file
+dependencies to be used for other commands like \`npm view\`
 
 
 
 #### \`allow-git\`
 
-* Default: "all"
+* Default: "none"
 * Type: "all", "none", or "root"
 
 Limits the ability for npm to fetch dependencies from git references. That
 is, dependencies that point to a git repo instead of a version or semver
 range. Please note that this could leave your tree incomplete and some
-packages may not function as intended or designed.
+packages may not function as intended or designed. Changing this setting
+will not remove dependencies that are already installed.
+
+As of npm 12 the default is \`none\`. Git dependencies run \`git\` against a
+remote repo and may install configuration the project does not control. Opt
+in explicitly per project (in \`.npmrc\`) or per command (on the CLI) when you
+need git deps.
 
 \`all\` allows any git dependencies to be fetched and installed. \`none\`
 prevents any git dependencies from being fetched and installed. \`root\` only
 allows git dependencies defined in your project's package.json to be fetched
-installed. Also allows git dependencies to be fetched for other commands
+and installed. Also allows git dependencies to be fetched for other commands
+like \`npm view\`
+
+
+
+#### \`allow-remote\`
+
+* Default: "none"
+* Type: "all", "none", or "root"
+
+Limits the ability for npm to fetch dependencies from urls. That is,
+dependencies that point to a tarball url instead of a version or semver
+range. Please note that this could leave your tree incomplete and some
+packages may not function as intended or designed. Changing this setting
+will not remove dependencies that are already installed.
+
+As of npm 12 the default is \`none\`. Tarballs that share a hostname with the
+configured registry (the typical case for the npm registry, GitHub Packages,
+and most private registries) are still installed normally. If your registry
+serves tarballs from a different host, set \`replace-registry-host\` or
+override this setting. Opt in explicitly per project (in \`.npmrc\`) or per
+command (on the CLI) when you intentionally install from a URL.
+
+\`all\` allows any url to be installed. \`none\` prevents any url from being
+installed. \`root\` only allows urls defined in your project's package.json to
+be installed. Also allows url dependencies to be used for other commands
 like \`npm view\`
 
 
@@ -236,6 +310,64 @@ like \`npm view\`
 
 Prevents throwing an error when \`npm version\` is used to set the new version
 to the same value as the current version.
+
+
+
+#### \`allow-scripts\`
+
+* Default: ""
+* Type: String (can be set multiple times)
+
+Comma-separated list of packages whose install-time lifecycle scripts
+(\`preinstall\`, \`install\`, \`postinstall\`, and \`prepare\` for non-registry
+dependencies) are allowed to run.
+
+This setting is intended for one-off and global contexts: \`npm exec\`, \`npx\`,
+and \`npm install -g\`, where no project \`package.json\` is involved. For
+team-wide policy in a project, use the \`allowScripts\` field in
+\`package.json\` (which also supports explicit denials), or configure it in
+\`.npmrc\`. Passing \`--allow-scripts\` on the command line during a
+project-scoped \`npm install\`, \`ci\`, \`update\`, or \`rebuild\` is an error.
+
+Each name is matched against a dependency's resolved identity, not against
+the package's self-reported name. \`--ignore-scripts\` and
+\`--dangerously-allow-all-scripts\` both override this setting.
+
+
+
+#### \`allow-scripts-pending\`
+
+* Default: false
+* Type: Boolean
+
+List packages with install scripts that are not yet covered by the
+\`allowScripts\` policy, without modifying \`package.json\`. Only meaningful for
+\`npm approve-scripts\`.
+
+
+
+#### \`allow-scripts-pin\`
+
+* Default: true
+* Type: Boolean
+
+Write pinned (\`pkg@version\`) entries when approving install scripts. Set to
+\`false\` to write name-only entries that allow any version. Has no effect on
+\`npm deny-scripts\`, which always writes name-only entries regardless of this
+setting.
+
+
+
+#### \`allow-unused-patches\`
+
+* Default: false
+* Type: Boolean
+
+Install even when a registered patch in \`patchedDependencies\` matches no
+installed package. Does not silence patch apply failures.
+
+This flag is only honored when passed on the command line; it is ignored in
+\`.npmrc\` and environment variables, and rejected by \`npm ci\`.
 
 
 
@@ -286,7 +418,20 @@ If the requested version is a \`dist-tag\` and the given tag does not pass the
 will be used. For example, \`foo@latest\` might install \`foo@1.2\` even though
 \`latest\` is \`2.0\`.
 
-This config cannot be used with: \`min-release-age\`
+If \`before\` and \`min-release-age\` are both set in the same source, \`before\`
+wins (an explicit absolute date overrides a relative window). Across
+sources, the standard precedence applies (cli > env > project > user >
+global), so a higher-priority source can always relax or override a
+lower-priority one.
+
+As with \`min-release-age\`, when this cutoff blocks a fix that \`npm audit
+fix\` would install, npm keeps the vulnerable version, warns, and exits with
+a non-zero code.
+
+Packages whose names match \`min-release-age-exclude\` are exempt from this
+filter.
+
+
 
 #### \`bin-links\`
 
@@ -428,6 +573,18 @@ are same as \`cpu\` field of package.json, which comes from \`process.arch\`.
 
 
 
+#### \`dangerously-allow-all-scripts\`
+
+* Default: false
+* Type: Boolean
+
+If \`true\`, bypass the \`allowScripts\` policy entirely and run every
+dependency install script regardless of whether it was approved or denied.
+Intended as a migration escape hatch only; its use is strongly discouraged.
+\`--ignore-scripts\` still takes precedence over this setting.
+
+
+
 #### \`depth\`
 
 * Default: \`Infinity\` if \`--all\` is set; otherwise, \`0\`
@@ -539,6 +696,16 @@ Note: This is NOT honored by other network related commands, eg \`dist-tags\`,
 
 
 
+#### \`edit-dir\`
+
+* Default: null
+* Type: null or Path
+
+Override the temporary directory used by \`npm patch add\` to prepare a
+package for editing.
+
+
+
 #### \`editor\`
 
 * Default: The EDITOR or VISUAL environment variables, or
@@ -589,6 +756,19 @@ This config cannot be used with: \`expect-result-count\`
 When creating a Granular Access Token with \`npm token create\`, this sets the
 expiration in days. If not specified, the server will determine the default
 expiration.
+
+
+
+#### \`extension-file\`
+
+* Default: null
+* Type: null or Path
+
+Path to a project-local npm extension file to load instead of discovering
+\`.npm-extension.mjs\` / \`.npm-extension.cjs\` at the project root. Must
+resolve inside the project root and use a \`.mjs\` or \`.cjs\` extension. Only
+honored from project config or the command line, never from user, global, or
+builtin config.
 
 
 
@@ -742,6 +922,25 @@ folder instead of the current working directory. See
 
 
 
+#### \`global-ignore-file\`
+
+* Default: The global --prefix setting plus 'etc/npmignore'. For example,
+  '/usr/local/etc/npmignore'
+* Type: Path
+
+An additional ignore file applied during \`npm pack\` and \`npm publish\`, owned
+by the current user rather than the package. Patterns follow the same syntax
+as a package's local \`.npmignore\` file. Useful for keeping editor metadata
+(such as \`.idea/\` or \`*.iml\`) and scratch directories out of every package
+you publish, without adding them to each package's own ignore rules.
+
+The global rules apply in addition to a package's local \`.npmignore\`. When a
+package uses a \`files\` field in its \`package.json\`, an entry in \`files\` that
+contradicts a global rule (i.e., explicitly includes a path the global rule
+would exclude) still wins.
+
+
+
 #### \`globalconfig\`
 
 * Default: The global --prefix setting plus 'etc/npmrc'. For example,
@@ -787,6 +986,41 @@ CI setup.
 
 This value is not exported to the environment for child processes.
 
+#### \`ignore-existing\`
+
+* Default: false
+* Type: Boolean
+
+With \`npm patch add\`, discard a previous unfinished edit directory and start
+fresh.
+
+
+
+#### \`ignore-extension\`
+
+* Default: false
+* Type: Boolean
+
+If true, npm does not import or execute a root \`.npm-extension.mjs\` /
+\`.npm-extension.cjs\` file (or one selected via \`extension-file\`).
+\`ignore-scripts\` implies \`ignore-extension\`, since both disable root-owned
+install-time code.
+
+
+
+#### \`ignore-patch-failures\`
+
+* Default: false
+* Type: Boolean
+
+Install even when a registered patch fails to apply, with a warning per
+failure. Intended for incident response only.
+
+This flag is only honored when passed on the command line; it is ignored in
+\`.npmrc\` and environment variables, and rejected by \`npm ci\`.
+
+
+
 #### \`ignore-scripts\`
 
 * Default: false
@@ -798,6 +1032,9 @@ Note that commands explicitly intended to run a particular script, such as
 \`npm start\`, \`npm stop\`, \`npm restart\`, \`npm test\`, and \`npm run\` will still
 run their intended script if \`ignore-scripts\` is set, but they will *not*
 run any pre- or post-scripts.
+
+Setting \`ignore-scripts\` also disables \`.npm-extension\` execution, as if
+\`ignore-extension\` were set.
 
 
 
@@ -882,10 +1119,11 @@ homepage.
 
 #### \`init-license\`
 
-* Default: "ISC"
+* Default: ""
 * Type: String
 
-The value \`npm init\` should use by default for the package license.
+The value \`npm init\` should use by default for the package license. If not
+set, the license field will be omitted from new packages.
 
 
 
@@ -966,6 +1204,16 @@ Whether or not to output JSON data, rather than the normal output.
   saving them to your \`package.json\`.
 
 Not supported by all npm commands.
+
+
+
+#### \`keep-edit-dir\`
+
+* Default: false
+* Type: Boolean
+
+With \`npm patch commit\`, do not remove the edit directory after committing
+the patch.
 
 
 
@@ -1139,9 +1387,48 @@ are no versions available for the current set of dependencies, the command
 will error.
 
 This flag is a complement to \`before\`, which accepts an exact date instead
-of a relative number of days.
+of a relative number of days. The two may coexist (e.g. \`min-release-age\` in
+your \`.npmrc\` is preserved when npm internally spawns a sub-process with
+\`--before\` while preparing a \`git:\` or \`github:\` dependency); when both
+apply, \`before\` wins within a single source and across sources the standard
+precedence rules apply.
 
-This config cannot be used with: \`before\`
+When this window stops \`npm audit fix\` from installing a patched version
+(because the fix was published too recently), npm keeps the package at its
+vulnerable version, warns that the fix was blocked, and exits with a
+non-zero code. To install the fix, add the package to
+\`min-release-age-exclude\`, or relax \`min-release-age\` or \`before\`.
+
+Packages whose names match \`min-release-age-exclude\` are exempt from this
+filter.
+
+This value is not exported to the environment for child processes.
+
+#### \`min-release-age-exclude\`
+
+* Default:
+* Type: String (can be set multiple times)
+
+A list of package names or \`minimatch\` glob patterns that are exempt from
+the \`min-release-age\` (and \`before\`) filter. A matching package can always
+resolve to its newest version, even when a release-age window is set.
+
+For example, to apply a release-age window to third-party dependencies while
+letting internally maintained packages update immediately:
+
+\`\`\`
+min-release-age=7
+min-release-age-exclude[]=@myorg/*
+min-release-age-exclude[]=my-internal-pkg
+\`\`\`
+
+Only the named package is exempt; its own dependencies still follow the
+release-age policy unless they also match a pattern. Patterns match against
+the package name, so \`@myorg/*\` matches \`@myorg/shared-utils\`.
+
+Excluding a package does not change which registry it is fetched from. You
+should own your private scope on the public registry so that nobody else can
+publish a package with the same name.
 
 This value is not exported to the environment for child processes.
 
@@ -1367,6 +1654,16 @@ Output parseable results from commands that write to standard output. For
 
 Password for authentication. Can be provided via command line when creating
 tokens, though it's generally safer to be prompted for it.
+
+
+
+#### \`patches-dir\`
+
+* Default: "patches"
+* Type: String
+
+The directory, relative to the project root, where \`npm patch commit\` writes
+patch files for \`patchedDependencies\`.
 
 
 
@@ -1750,6 +2047,27 @@ this to work properly.
 
 
 
+#### \`strict-allow-scripts\`
+
+* Default: false
+* Type: Boolean
+
+If \`true\`, turn the install-script policy from a warning into a hard error:
+any dependency with install scripts that is not covered by \`allowScripts\`
+will fail the install instead of being blocked with a warning.
+
+Dependencies explicitly denied with \`false\` in \`allowScripts\` are always
+silently skipped; this setting only affects unreviewed entries (packages
+with install scripts that are neither approved nor denied).
+\`--ignore-scripts\` and \`--dangerously-allow-all-scripts\` both override this
+setting.
+
+Optional dependencies that cannot be installed on the current platform or
+engine (a non-matching \`os\`, \`cpu\`, or \`libc\`) are not flagged, because
+their install scripts never run.
+
+
+
 #### \`strict-peer-deps\`
 
 * Default: false
@@ -1830,6 +2148,17 @@ You can quickly view it with this [json](https://npm.im/json) command line:
 
 Timing information will also be reported in the terminal. To suppress this
 while still writing the timing file, use \`--silent\`.
+
+
+
+#### \`to\`
+
+* Default: null
+* Type: null or String
+
+Used by \`npm patch update\` to set the version to rebase a patch onto when it
+cannot be read from \`package-lock.json\` — for example an exact-version
+selector, or a version that has not been installed yet.
 
 
 
@@ -2138,7 +2467,7 @@ Alias for \`--init-author-url\`
 
 #### \`init.license\`
 
-* Default: "ISC"
+* Default: ""
 * Type: String
 * DEPRECATED: Use \`--init-license\` instead.
 
@@ -2241,7 +2570,11 @@ Array [
   "access",
   "all",
   "allow-same-version",
+  "allow-directory",
+  "allow-file",
   "allow-git",
+  "allow-remote",
+  "allow-scripts",
   "also",
   "audit",
   "audit-level",
@@ -2261,6 +2594,7 @@ Array [
   "color",
   "commit-hooks",
   "cpu",
+  "dangerously-allow-all-scripts",
   "depth",
   "description",
   "dev",
@@ -2278,6 +2612,7 @@ Array [
   "expect-result-count",
   "expect-results",
   "expires",
+  "extension-file",
   "fetch-retries",
   "fetch-retry-factor",
   "fetch-retry-maxtimeout",
@@ -2291,10 +2626,12 @@ Array [
   "git-tag-version",
   "global",
   "globalconfig",
+  "global-ignore-file",
   "global-style",
   "heading",
   "https-proxy",
   "if-present",
+  "ignore-extension",
   "ignore-scripts",
   "include",
   "include-staged",
@@ -2333,6 +2670,7 @@ Array [
   "maxsockets",
   "message",
   "min-release-age",
+  "min-release-age-exclude",
   "node-gyp",
   "node-options",
   "noproxy",
@@ -2349,7 +2687,15 @@ Array [
   "package-lock-only",
   "pack-destination",
   "packages",
+  "patches-dir",
+  "allow-unused-patches",
+  "ignore-patch-failures",
+  "edit-dir",
+  "ignore-existing",
+  "keep-edit-dir",
   "parseable",
+  "allow-scripts-pending",
+  "allow-scripts-pin",
   "prefer-dedupe",
   "prefer-offline",
   "prefer-online",
@@ -2390,10 +2736,12 @@ Array [
   "sign-git-commit",
   "sign-git-tag",
   "strict-peer-deps",
+  "strict-allow-scripts",
   "strict-ssl",
   "tag",
   "tag-version-prefix",
   "timing",
+  "to",
   "umask",
   "unicode",
   "update-notifier",
@@ -2417,7 +2765,11 @@ Array [
   "access",
   "all",
   "allow-same-version",
+  "allow-directory",
+  "allow-file",
   "allow-git",
+  "allow-remote",
+  "allow-scripts",
   "also",
   "audit",
   "audit-level",
@@ -2437,6 +2789,7 @@ Array [
   "color",
   "commit-hooks",
   "cpu",
+  "dangerously-allow-all-scripts",
   "depth",
   "description",
   "dev",
@@ -2452,6 +2805,7 @@ Array [
   "editor",
   "engine-strict",
   "expires",
+  "extension-file",
   "fetch-retries",
   "fetch-retry-factor",
   "fetch-retry-maxtimeout",
@@ -2465,10 +2819,12 @@ Array [
   "git-tag-version",
   "global",
   "globalconfig",
+  "global-ignore-file",
   "global-style",
   "heading",
   "https-proxy",
   "if-present",
+  "ignore-extension",
   "ignore-scripts",
   "include",
   "include-staged",
@@ -2490,6 +2846,7 @@ Array [
   "maxsockets",
   "message",
   "min-release-age",
+  "min-release-age-exclude",
   "node-gyp",
   "noproxy",
   "offline",
@@ -2505,7 +2862,10 @@ Array [
   "package-lock-only",
   "pack-destination",
   "packages",
+  "patches-dir",
   "parseable",
+  "allow-scripts-pending",
+  "allow-scripts-pin",
   "prefer-dedupe",
   "prefer-offline",
   "prefer-online",
@@ -2545,6 +2905,7 @@ Array [
   "sign-git-commit",
   "sign-git-tag",
   "strict-peer-deps",
+  "strict-allow-scripts",
   "strict-ssl",
   "tag",
   "tag-version-prefix",
@@ -2579,8 +2940,14 @@ Array [
   "logs-max",
   "long",
   "node-options",
+  "allow-unused-patches",
+  "ignore-patch-failures",
+  "edit-dir",
+  "ignore-existing",
+  "keep-edit-dir",
   "prefix",
   "timing",
+  "to",
   "update-notifier",
   "usage",
   "userconfig",
@@ -2597,8 +2964,14 @@ Object {
   "_auth": null,
   "access": null,
   "all": false,
-  "allowGit": "all",
+  "allowDirectory": "all",
+  "allowFile": "all",
+  "allowGit": "none",
+  "allowRemote": "none",
   "allowSameVersion": false,
+  "allowScripts": Array [],
+  "allowScriptsPending": false,
+  "allowScriptsPin": true,
   "audit": true,
   "auditLevel": null,
   "authType": "web",
@@ -2614,6 +2987,7 @@ Object {
   "color": false,
   "commitHooks": true,
   "cpu": null,
+  "dangerouslyAllowAllScripts": false,
   "defaultTag": "latest",
   "depth": null,
   "diff": Array [],
@@ -2628,6 +3002,7 @@ Object {
   "editor": "{EDITOR}",
   "engineStrict": false,
   "expires": null,
+  "extensionFile": null,
   "force": false,
   "foregroundScripts": false,
   "formatPackageLock": true,
@@ -2636,9 +3011,11 @@ Object {
   "gitTagVersion": true,
   "global": false,
   "globalconfig": "{CWD}/global/etc/npmrc",
+  "globalIgnoreFile": "{CWD}/global/etc/npmignore",
   "heading": "npm",
   "httpsProxy": null,
   "ifPresent": false,
+  "ignoreExtension": false,
   "ignoreScripts": false,
   "includeAttestations": false,
   "includeStaged": false,
@@ -2656,6 +3033,7 @@ Object {
   "logColor": false,
   "maxSockets": 15,
   "message": "%s",
+  "minReleaseAgeExclude": Array [],
   "name": null,
   "nodeBin": "{NODE}",
   "nodeGyp": "{CWD}/node_modules/node-gyp/bin/node-gyp.js",
@@ -2681,6 +3059,7 @@ Object {
   "packDestination": ".",
   "parseable": false,
   "password": null,
+  "patchesDir": "patches",
   "preferDedupe": false,
   "preferOffline": false,
   "preferOnline": false,
@@ -2719,6 +3098,7 @@ Object {
   "signGitCommit": false,
   "signGitTag": false,
   "silent": false,
+  "strictAllowScripts": false,
   "strictPeerDeps": false,
   "strictSSL": true,
   "tagVersionPrefix": "v",
@@ -2818,6 +3198,46 @@ Note: This command is unaware of workspaces.
 #### \`json\`
 #### \`otp\`
 #### \`registry\`
+`
+
+exports[`test/lib/docs.js TAP usage approve-scripts > must match snapshot 1`] = `
+Approve install scripts for specific dependencies
+
+Usage:
+npm approve-scripts <pkg> [<pkg> ...]
+npm approve-scripts --all
+npm approve-scripts --allow-scripts-pending
+
+Options:
+[-a|--all] [--allow-scripts-pending] [--no-allow-scripts-pin] [--json]
+
+  -a|--all
+    Show or act on all packages, not just the ones your project directly
+
+  --allow-scripts-pending
+    List packages with install scripts that are not yet covered by the
+
+  --allow-scripts-pin
+    Write pinned (\`pkg@version\`) entries when approving install scripts.
+
+  --json
+    Whether or not to output JSON data, rather than the normal output.
+
+
+Run "npm help approve-scripts" for more info
+
+\`\`\`bash
+npm approve-scripts <pkg> [<pkg> ...]
+npm approve-scripts --all
+npm approve-scripts --allow-scripts-pending
+\`\`\`
+
+Note: This command is unaware of workspaces.
+
+#### \`all\`
+#### \`allow-scripts-pending\`
+#### \`allow-scripts-pin\`
+#### \`json\`
 `
 
 exports[`test/lib/docs.js TAP usage audit > must match snapshot 1`] = `
@@ -2995,8 +3415,11 @@ Options:
 [--global-style] [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
 [--strict-peer-deps] [--foreground-scripts] [--ignore-scripts]
-[--allow-git <all|none|root>] [--no-audit] [--no-bin-links] [--no-fund]
-[--dry-run]
+[--allow-directory <all|none|root>] [--allow-file <all|none|root>]
+[--allow-git <all|none|root>] [--allow-remote <all|none|root>]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts] [--no-audit]
+[--no-bin-links] [--no-fund] [--dry-run]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -3024,8 +3447,26 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-directory
+    Limits the ability for npm to install dependencies from directories.
+
+  --allow-file
+    Limits the ability for npm to install dependencies from tarball files.
+
   --allow-git
     Limits the ability for npm to fetch dependencies from git references.
+
+  --allow-remote
+    Limits the ability for npm to fetch dependencies from urls.
+
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
 
   --audit
     When "true" submit audit reports alongside the current npm command to the
@@ -3070,7 +3511,13 @@ aliases: clean-install, ic, install-clean, isntall-clean
 #### \`strict-peer-deps\`
 #### \`foreground-scripts\`
 #### \`ignore-scripts\`
+#### \`allow-directory\`
+#### \`allow-file\`
 #### \`allow-git\`
+#### \`allow-remote\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 #### \`audit\`
 #### \`bin-links\`
 #### \`fund\`
@@ -3167,8 +3614,10 @@ Options:
 [--global-style] [--strict-peer-deps] [--no-package-lock]
 [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
-[--ignore-scripts] [--allow-git <all|none|root>] [--no-audit] [--no-bin-links]
-[--no-fund] [--dry-run]
+[--ignore-scripts] [--allow-directory <all|none|root>]
+[--allow-file <all|none|root>] [--allow-git <all|none|root>]
+[--allow-remote <all|none|root>] [--no-audit] [--no-bin-links] [--no-fund]
+[--dry-run]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -3196,8 +3645,17 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-directory
+    Limits the ability for npm to install dependencies from directories.
+
+  --allow-file
+    Limits the ability for npm to install dependencies from tarball files.
+
   --allow-git
     Limits the ability for npm to fetch dependencies from git references.
+
+  --allow-remote
+    Limits the ability for npm to fetch dependencies from urls.
 
   --audit
     When "true" submit audit reports alongside the current npm command to the
@@ -3242,7 +3700,10 @@ alias: ddp
 #### \`omit\`
 #### \`include\`
 #### \`ignore-scripts\`
+#### \`allow-directory\`
+#### \`allow-file\`
 #### \`allow-git\`
+#### \`allow-remote\`
 #### \`audit\`
 #### \`bin-links\`
 #### \`fund\`
@@ -3251,6 +3712,44 @@ alias: ddp
 #### \`workspaces\`
 #### \`include-workspace-root\`
 #### \`install-links\`
+`
+
+exports[`test/lib/docs.js TAP usage deny-scripts > must match snapshot 1`] = `
+Deny install scripts for specific dependencies
+
+Usage:
+npm deny-scripts <pkg> [<pkg> ...]
+npm deny-scripts --all
+
+Options:
+[-a|--all] [--allow-scripts-pending] [--no-allow-scripts-pin] [--json]
+
+  -a|--all
+    Show or act on all packages, not just the ones your project directly
+
+  --allow-scripts-pending
+    List packages with install scripts that are not yet covered by the
+
+  --allow-scripts-pin
+    Write pinned (\`pkg@version\`) entries when approving install scripts.
+
+  --json
+    Whether or not to output JSON data, rather than the normal output.
+
+
+Run "npm help deny-scripts" for more info
+
+\`\`\`bash
+npm deny-scripts <pkg> [<pkg> ...]
+npm deny-scripts --all
+\`\`\`
+
+Note: This command is unaware of workspaces.
+
+#### \`all\`
+#### \`allow-scripts-pending\`
+#### \`allow-scripts-pin\`
+#### \`json\`
 `
 
 exports[`test/lib/docs.js TAP usage deprecate > must match snapshot 1`] = `
@@ -3504,6 +4003,8 @@ Options:
 [--package <package-spec> [--package <package-spec> ...]] [-c|--call <call>]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts]
 
   --package
     The package or packages to install for [\`npm exec\`](/commands/npm-exec)
@@ -3519,6 +4020,15 @@ Options:
 
   --include-workspace-root
     Include the workspace root when workspaces are enabled for a command.
+
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
 
 
 alias: x
@@ -3539,6 +4049,9 @@ alias: x
 #### \`workspace\`
 #### \`workspaces\`
 #### \`include-workspace-root\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 `
 
 exports[`test/lib/docs.js TAP usage explain > must match snapshot 1`] = `
@@ -3892,9 +4405,15 @@ Options:
 [--global-style] [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
 [--strict-peer-deps] [--prefer-dedupe] [--no-package-lock] [--package-lock-only]
-[--foreground-scripts] [--ignore-scripts] [--allow-git <all|none|root>]
-[--no-audit] [--before <date>|--min-release-age <days>] [--no-bin-links]
-[--no-fund] [--dry-run] [--cpu <cpu>] [--os <os>] [--libc <libc>]
+[--foreground-scripts] [--ignore-scripts] [--allow-directory <all|none|root>]
+[--allow-file <all|none|root>] [--allow-git <all|none|root>]
+[--allow-remote <all|none|root>]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts] [--no-audit]
+[--before <date>] [--min-release-age <days>]
+[--min-release-age-exclude <pkg|glob> [--min-release-age-exclude <pkg|glob> ...]]
+[--no-bin-links] [--no-fund] [--dry-run] [--cpu <cpu>] [--os <os>]
+[--libc <libc>]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -3940,8 +4459,26 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-directory
+    Limits the ability for npm to install dependencies from directories.
+
+  --allow-file
+    Limits the ability for npm to install dependencies from tarball files.
+
   --allow-git
     Limits the ability for npm to fetch dependencies from git references.
+
+  --allow-remote
+    Limits the ability for npm to fetch dependencies from urls.
+
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
 
   --audit
     When "true" submit audit reports alongside the current npm command to the
@@ -3951,6 +4488,9 @@ Options:
 
   --min-release-age
     If set, npm will build the npm tree such that only versions that were
+
+  --min-release-age-exclude
+    A list of package names or \`minimatch\` glob patterns that are exempt
 
   --bin-links
     Tells npm to create symlinks (or \`.cmd\` shims on Windows) for package
@@ -4007,10 +4547,17 @@ aliases: add, i, in, ins, inst, insta, instal, isnt, isnta, isntal, isntall
 #### \`package-lock-only\`
 #### \`foreground-scripts\`
 #### \`ignore-scripts\`
+#### \`allow-directory\`
+#### \`allow-file\`
 #### \`allow-git\`
+#### \`allow-remote\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 #### \`audit\`
 #### \`before\`
 #### \`min-release-age\`
+#### \`min-release-age-exclude\`
 #### \`bin-links\`
 #### \`fund\`
 #### \`dry-run\`
@@ -4034,8 +4581,11 @@ Options:
 [--global-style] [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
 [--strict-peer-deps] [--foreground-scripts] [--ignore-scripts]
-[--allow-git <all|none|root>] [--no-audit] [--no-bin-links] [--no-fund]
-[--dry-run]
+[--allow-directory <all|none|root>] [--allow-file <all|none|root>]
+[--allow-git <all|none|root>] [--allow-remote <all|none|root>]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts] [--no-audit]
+[--no-bin-links] [--no-fund] [--dry-run]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -4063,8 +4613,26 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-directory
+    Limits the ability for npm to install dependencies from directories.
+
+  --allow-file
+    Limits the ability for npm to install dependencies from tarball files.
+
   --allow-git
     Limits the ability for npm to fetch dependencies from git references.
+
+  --allow-remote
+    Limits the ability for npm to fetch dependencies from urls.
+
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
 
   --audit
     When "true" submit audit reports alongside the current npm command to the
@@ -4109,7 +4677,13 @@ aliases: cit, clean-install-test, sit
 #### \`strict-peer-deps\`
 #### \`foreground-scripts\`
 #### \`ignore-scripts\`
+#### \`allow-directory\`
+#### \`allow-file\`
 #### \`allow-git\`
+#### \`allow-remote\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 #### \`audit\`
 #### \`bin-links\`
 #### \`fund\`
@@ -4133,9 +4707,15 @@ Options:
 [--global-style] [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
 [--strict-peer-deps] [--prefer-dedupe] [--no-package-lock] [--package-lock-only]
-[--foreground-scripts] [--ignore-scripts] [--allow-git <all|none|root>]
-[--no-audit] [--before <date>|--min-release-age <days>] [--no-bin-links]
-[--no-fund] [--dry-run] [--cpu <cpu>] [--os <os>] [--libc <libc>]
+[--foreground-scripts] [--ignore-scripts] [--allow-directory <all|none|root>]
+[--allow-file <all|none|root>] [--allow-git <all|none|root>]
+[--allow-remote <all|none|root>]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts] [--no-audit]
+[--before <date>] [--min-release-age <days>]
+[--min-release-age-exclude <pkg|glob> [--min-release-age-exclude <pkg|glob> ...]]
+[--no-bin-links] [--no-fund] [--dry-run] [--cpu <cpu>] [--os <os>]
+[--libc <libc>]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -4181,8 +4761,26 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-directory
+    Limits the ability for npm to install dependencies from directories.
+
+  --allow-file
+    Limits the ability for npm to install dependencies from tarball files.
+
   --allow-git
     Limits the ability for npm to fetch dependencies from git references.
+
+  --allow-remote
+    Limits the ability for npm to fetch dependencies from urls.
+
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
 
   --audit
     When "true" submit audit reports alongside the current npm command to the
@@ -4192,6 +4790,9 @@ Options:
 
   --min-release-age
     If set, npm will build the npm tree such that only versions that were
+
+  --min-release-age-exclude
+    A list of package names or \`minimatch\` glob patterns that are exempt
 
   --bin-links
     Tells npm to create symlinks (or \`.cmd\` shims on Windows) for package
@@ -4248,10 +4849,17 @@ alias: it
 #### \`package-lock-only\`
 #### \`foreground-scripts\`
 #### \`ignore-scripts\`
+#### \`allow-directory\`
+#### \`allow-file\`
 #### \`allow-git\`
+#### \`allow-remote\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 #### \`audit\`
 #### \`before\`
 #### \`min-release-age\`
+#### \`min-release-age-exclude\`
 #### \`bin-links\`
 #### \`fund\`
 #### \`dry-run\`
@@ -4277,8 +4885,10 @@ Options:
 [--global-style] [--strict-peer-deps] [--no-package-lock]
 [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
-[--ignore-scripts] [--allow-git <all|none|root>] [--no-audit] [--no-bin-links]
-[--no-fund] [--dry-run]
+[--ignore-scripts] [--allow-directory <all|none|root>]
+[--allow-file <all|none|root>] [--allow-git <all|none|root>]
+[--allow-remote <all|none|root>] [--no-audit] [--no-bin-links] [--no-fund]
+[--dry-run]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -4315,8 +4925,17 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-directory
+    Limits the ability for npm to install dependencies from directories.
+
+  --allow-file
+    Limits the ability for npm to install dependencies from tarball files.
+
   --allow-git
     Limits the ability for npm to fetch dependencies from git references.
+
+  --allow-remote
+    Limits the ability for npm to fetch dependencies from urls.
 
   --audit
     When "true" submit audit reports alongside the current npm command to the
@@ -4364,7 +4983,10 @@ alias: ln
 #### \`omit\`
 #### \`include\`
 #### \`ignore-scripts\`
+#### \`allow-directory\`
+#### \`allow-file\`
 #### \`allow-git\`
+#### \`allow-remote\`
 #### \`audit\`
 #### \`bin-links\`
 #### \`fund\`
@@ -4390,7 +5012,7 @@ Options:
 [--workspaces] [--include-workspace-root] [--install-links]
 
   -a|--all
-    When running \`npm outdated\` and \`npm ls\`, setting \`--all\` will show
+    Show or act on all packages, not just the ones your project directly
 
   --json
     Whether or not to output JSON data, rather than the normal output.
@@ -4537,7 +5159,7 @@ Options:
 [--workspaces] [--include-workspace-root] [--install-links]
 
   -a|--all
-    When running \`npm outdated\` and \`npm ls\`, setting \`--all\` will show
+    Show or act on all packages, not just the ones your project directly
 
   --json
     Whether or not to output JSON data, rather than the normal output.
@@ -4683,10 +5305,11 @@ npm outdated [<package-spec> ...]
 Options:
 [-a|--all] [--json] [-l|--long] [-p|--parseable] [-g|--global]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
-[--before <date>|--min-release-age <days>]
+[--before <date>] [--min-release-age <days>]
+[--min-release-age-exclude <pkg|glob> [--min-release-age-exclude <pkg|glob> ...]]
 
   -a|--all
-    When running \`npm outdated\` and \`npm ls\`, setting \`--all\` will show
+    Show or act on all packages, not just the ones your project directly
 
   --json
     Whether or not to output JSON data, rather than the normal output.
@@ -4706,6 +5329,12 @@ Options:
   --before
     If passed to \`npm install\`, will rebuild the npm tree such that only
 
+  --min-release-age
+    If set, npm will build the npm tree such that only versions that were
+
+  --min-release-age-exclude
+    A list of package names or \`minimatch\` glob patterns that are exempt
+
 
 Run "npm help outdated" for more info
 
@@ -4721,6 +5350,7 @@ npm outdated [<package-spec> ...]
 #### \`workspace\`
 #### \`before\`
 #### \`min-release-age\`
+#### \`min-release-age-exclude\`
 `
 
 exports[`test/lib/docs.js TAP usage owner > must match snapshot 1`] = `
@@ -4813,6 +5443,70 @@ npm pack <package-spec>
 #### \`workspaces\`
 #### \`include-workspace-root\`
 #### \`ignore-scripts\`
+`
+
+exports[`test/lib/docs.js TAP usage patch > must match snapshot 1`] = `
+Apply local patches to installed dependencies
+
+Usage:
+npm patch <pkg>[@<version>]
+npm patch add <pkg>[@<version>] [--edit-dir <path>] [--ignore-existing]
+npm patch commit <edit-dir> [--patches-dir <dir>] [--keep-edit-dir]
+npm patch update <pkg>[@<old-version>] [--to <new-version>] [--patches-dir <dir>]
+npm patch ls
+npm patch rm <pkg>[@<version>]
+
+Options:
+[--patches-dir <patches-dir>] [--allow-unused-patches] [--ignore-patch-failures]
+[--edit-dir <edit-dir>] [--ignore-existing] [--keep-edit-dir] [--to <version>]
+[--registry <registry>]
+
+  --patches-dir
+    The directory, relative to the project root, where \`npm patch commit\`
+
+  --allow-unused-patches
+    Install even when a registered patch in \`patchedDependencies\` matches no
+
+  --ignore-patch-failures
+    Install even when a registered patch fails to apply, with a warning per
+
+  --edit-dir
+    Override the temporary directory used by \`npm patch add\` to prepare a
+
+  --ignore-existing
+    With \`npm patch add\`, discard a previous unfinished edit directory and
+
+  --keep-edit-dir
+    With \`npm patch commit\`, do not remove the edit directory after
+
+  --to
+    Used by \`npm patch update\` to set the version to rebase a patch onto
+
+  --registry
+    The base URL of the npm registry.
+
+
+Run "npm help patch" for more info
+
+\`\`\`bash
+npm patch <pkg>[@<version>]
+npm patch add <pkg>[@<version>] [--edit-dir <path>] [--ignore-existing]
+npm patch commit <edit-dir> [--patches-dir <dir>] [--keep-edit-dir]
+npm patch update <pkg>[@<old-version>] [--to <new-version>] [--patches-dir <dir>]
+npm patch ls
+npm patch rm <pkg>[@<version>]
+\`\`\`
+
+Note: This command is unaware of workspaces.
+
+#### \`patches-dir\`
+#### \`allow-unused-patches\`
+#### \`ignore-patch-failures\`
+#### \`edit-dir\`
+#### \`ignore-existing\`
+#### \`keep-edit-dir\`
+#### \`to\`
+#### \`registry\`
 `
 
 exports[`test/lib/docs.js TAP usage ping > must match snapshot 1`] = `
@@ -5020,7 +5714,7 @@ Usage:
 npm publish <package-spec>
 
 Options:
-[--tag <tag>] [--access <restricted|public>] [--dry-run] [--otp <otp>]
+[--tag <tag>] [--access <restricted|public|private>] [--dry-run] [--otp <otp>]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--provenance|--provenance-file <file>]
 
@@ -5076,7 +5770,9 @@ Options:
 [-g|--global]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--package-lock-only]
-[--expect-results|--expect-result-count <count>]
+[--expect-results|--expect-result-count <count>] [--before <date>]
+[--min-release-age <days>]
+[--min-release-age-exclude <pkg|glob> [--min-release-age-exclude <pkg|glob> ...]]
 
   -g|--global
     Operates in "global" mode, so that packages are installed into the
@@ -5096,6 +5792,15 @@ Options:
   --expect-results
     Tells npm whether or not to expect results from the command.
 
+  --before
+    If passed to \`npm install\`, will rebuild the npm tree such that only
+
+  --min-release-age
+    If set, npm will build the npm tree such that only versions that were
+
+  --min-release-age-exclude
+    A list of package names or \`minimatch\` glob patterns that are exempt
+
 
 Run "npm help query" for more info
 
@@ -5110,6 +5815,9 @@ npm query <selector>
 #### \`package-lock-only\`
 #### \`expect-results\`
 #### \`expect-result-count\`
+#### \`before\`
+#### \`min-release-age\`
+#### \`min-release-age-exclude\`
 `
 
 exports[`test/lib/docs.js TAP usage rebuild > must match snapshot 1`] = `
@@ -5120,6 +5828,8 @@ npm rebuild [<package-spec>] ...]
 
 Options:
 [-g|--global] [--no-bin-links] [--foreground-scripts] [--ignore-scripts]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
 
@@ -5134,6 +5844,15 @@ Options:
 
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
+
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
 
   -w|--workspace
     Enable running a command in the context of the configured workspaces of the
@@ -5162,6 +5881,9 @@ alias: rb
 #### \`bin-links\`
 #### \`foreground-scripts\`
 #### \`ignore-scripts\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 #### \`workspace\`
 #### \`workspaces\`
 #### \`include-workspace-root\`
@@ -5455,6 +6177,61 @@ Note: This command is unaware of workspaces.
 #### \`location\`
 `
 
+exports[`test/lib/docs.js TAP usage stage > must match snapshot 1`] = `
+Stage packages for publishing, deferring proof-of-presence (2FA) to a later point in time
+
+Usage:
+npm stage
+npm stage publish <package-spec>
+npm stage list [<package-spec>]
+npm stage view <stage-id>
+npm stage approve <stage-id>
+npm stage reject <stage-id>
+npm stage download <stage-id>
+
+Subcommands:
+  publish
+    Stage a package for publishing, deferring proof-of-presence (2FA) to a later point in time
+
+  list
+    List all staged package versions
+
+  view
+    View details of a specific staged package
+
+  approve
+    Approve a staged package, publishing it to the npm registry
+
+  reject
+    Reject a staged package, removing it from the registry
+
+  download
+    Download the tarball of a staged package for inspection
+
+Run "npm stage <subcommand> --help" for more info on a subcommand.
+
+Run "npm help stage" for more info
+
+\`\`\`bash
+npm stage
+\`\`\`
+
+Note: This command is unaware of workspaces.
+
+#### Synopsis
+#### Flags
+#### Synopsis
+#### Flags
+#### Synopsis
+#### Flags
+#### Synopsis
+#### Flags
+#### Synopsis
+#### Flags
+#### Synopsis
+#### Flags
+`
+
 exports[`test/lib/docs.js TAP usage start > must match snapshot 1`] = `
 Start a package
 
@@ -5675,9 +6452,9 @@ exports[`test/lib/docs.js TAP usage trust > must match snapshot 1`] = `
 Create a trusted relationship between a package and a OIDC provider
 
 Usage:
-npm trust github [package] --file [--repo|--repository] [--env|--environment] [-y|--yes]
-npm trust gitlab [package] --file [--project|--repo|--repository] [--env|--environment] [-y|--yes]
-npm trust circleci [package] --org-id <uuid> --project-id <uuid> --pipeline-definition-id <uuid> --vcs-origin <origin> [--context-id <uuid>...] [-y|--yes]
+npm trust github [package] --file [--repo|--repository] [--env|--environment] [--allow-publish] [--allow-stage-publish] [-y|--yes]
+npm trust gitlab [package] --file [--project|--repo|--repository] [--env|--environment] [--allow-publish] [--allow-stage-publish] [-y|--yes]
+npm trust circleci [package] --org-id <uuid> --project-id <uuid> --pipeline-definition-id <uuid> --vcs-origin <origin> [--context-id <uuid>...] [--allow-publish] [--allow-stage-publish] [-y|--yes]
 npm trust list [package]
 npm trust revoke [package] --id=<trust-id>
 
@@ -5845,7 +6622,11 @@ Options:
 [--omit <dev|optional|peer> [--omit <dev|optional|peer> ...]]
 [--include <prod|dev|optional|peer> [--include <prod|dev|optional|peer> ...]]
 [--strict-peer-deps] [--no-package-lock] [--foreground-scripts]
-[--ignore-scripts] [--no-audit] [--before <date>|--min-release-age <days>]
+[--ignore-scripts]
+[--allow-scripts <package-list> [--allow-scripts <package-list> ...]]
+[--strict-allow-scripts] [--dangerously-allow-all-scripts] [--no-audit]
+[--before <date>] [--min-release-age <days>]
+[--min-release-age-exclude <pkg|glob> [--min-release-age-exclude <pkg|glob> ...]]
 [--no-bin-links] [--no-fund] [--dry-run]
 [-w|--workspace <workspace-name> [-w|--workspace <workspace-name> ...]]
 [--workspaces] [--include-workspace-root] [--install-links]
@@ -5883,11 +6664,26 @@ Options:
   --ignore-scripts
     If true, npm does not run scripts specified in package.json files.
 
+  --allow-scripts
+    Comma-separated list of packages whose install-time lifecycle scripts
+
+  --strict-allow-scripts
+    If \`true\`, turn the install-script policy from a warning into a hard
+
+  --dangerously-allow-all-scripts
+    If \`true\`, bypass the \`allowScripts\` policy entirely and run every
+
   --audit
     When "true" submit audit reports alongside the current npm command to the
 
   --before
     If passed to \`npm install\`, will rebuild the npm tree such that only
+
+  --min-release-age
+    If set, npm will build the npm tree such that only versions that were
+
+  --min-release-age-exclude
+    A list of package names or \`minimatch\` glob patterns that are exempt
 
   --bin-links
     Tells npm to create symlinks (or \`.cmd\` shims on Windows) for package
@@ -5932,9 +6728,13 @@ aliases: u, up, upgrade, udpate
 #### \`package-lock\`
 #### \`foreground-scripts\`
 #### \`ignore-scripts\`
+#### \`allow-scripts\`
+#### \`strict-allow-scripts\`
+#### \`dangerously-allow-all-scripts\`
 #### \`audit\`
 #### \`before\`
 #### \`min-release-age\`
+#### \`min-release-age-exclude\`
 #### \`bin-links\`
 #### \`fund\`
 #### \`dry-run\`

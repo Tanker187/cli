@@ -12,7 +12,7 @@ description: Manage trusted publishing relationships between packages and CI/CD 
 
 Before using npm trust commands, ensure the following requirements are met:
 
-* **npm version**: `npm@11.10.0` or above is required. Use `npm install -g npm@^11.10.0` to update if needed.
+* **npm version**: `npm@11.15.0` or above is required. Use `npm install -g npm@^11.15.0` to update if needed.
 * **Write permissions on the package**: You must have write access to the package you're configuring.
 * **2FA enabled on account**: Two-factor authentication must be enabled at the account level. Even if it's not currently enabled, you must enable it to use trust commands.
 * **Supported authentication methods**: Granular Access Tokens (GAT) with the bypass 2FA option are not supported. Legacy basic auth (username and password) credentials will not work for trust commands or endpoints.
@@ -27,6 +27,17 @@ For a comprehensive overview of trusted publishing, see the [npm trusted publish
 The `[package]` argument specifies the package name. If omitted, npm will use the name from the `package.json` in the current directory.
 
 Each trust relationship has its own set of configuration options and flags based on the OIDC claims provided by that provider. OIDC claims come from the CI/CD provider and include information such as repository name, workflow file, or environment. Since each provider's claims differ, the available flags and configuration keys are not universal—npm matches the claims supported by each provider's OIDC configuration. For specific details on which claims and flags are supported for a given provider, use `npm trust <provider> --help`.
+
+### Permissions
+
+When creating a trust relationship, you must specify at least one permission flag to indicate which operations the trusted publisher is allowed to perform:
+
+* `--allow-publish`: Allows the trusted publisher to run `npm publish` for the package.
+* `--allow-stage-publish`: Allows the trusted publisher to run `npm stage` for the package. The alias `--allow-staged-publish` is also accepted.
+
+At least one of these flags is required when creating a trust configuration. You can specify both to grant both permissions.
+
+### Provider Options
 
 The required options depend on the CI/CD provider you're configuring. Detailed information about each option is available in the [managing trusted publisher configurations](https://docs.npmjs.com/trusted-publishers#managing-trusted-publisher-configurations) section of the npm documentation. If a provider is repository-based and the option is not provided, npm will use the `repository.url` field from your `package.json`, if available.
 

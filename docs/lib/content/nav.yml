@@ -12,6 +12,9 @@
   - title: npm access
     url: /commands/npm-access
     description: Set access level on published packages
+  - title: npm approve-scripts
+    url: /commands/npm-approve-scripts
+    description: Approve install scripts for specific dependencies
   - title: npm audit
     url: /commands/npm-audit
     description: Run a security audit
@@ -33,6 +36,9 @@
   - title: npm dedupe
     url: /commands/npm-dedupe
     description: Reduce duplication in the package tree
+  - title: npm deny-scripts
+    url: /commands/npm-deny-scripts
+    description: Deny install scripts for specific dependencies
   - title: npm deprecate
     url: /commands/npm-deprecate
     description: Deprecate a version of a package
@@ -114,6 +120,9 @@
   - title: npm pack
     url: /commands/npm-pack
     description: Create a tarball from a package
+  - title: npm patch
+    url: /commands/npm-patch
+    description: Apply local patches to installed dependencies
   - title: npm ping
     url: /commands/npm-ping
     description: Ping npm registry
@@ -159,6 +168,9 @@
   - title: npm set
     url: /commands/npm-set
     description: Set a value in the npm configuration
+  - title: npm stage
+    url: /commands/npm-stage
+    description: Stage packages for publishing
   - title: npm start
     url: /commands/npm-start
     description: Start a package
@@ -220,6 +232,9 @@
   - title: package-lock.json
     url: /configuring-npm/package-lock-json
     description: A manifestation of the manifest
+  - title: .npm-extension
+    url: /configuring-npm/npm-extension
+    description: Imperative, root-owned manifest repairs
 - title: Using npm
   shortName: Using
   url: /using-npm

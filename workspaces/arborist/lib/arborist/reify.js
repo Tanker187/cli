@@ -4,6 +4,7 @@ const hgi = require('hosted-git-info')
 const npa = require('npm-package-arg')
 const packageContents = require('@npmcli/installed-package-contents')
 const pacote = require('pacote')
+const { pickRegistry } = require('npm-registry-fetch')
 const promiseAllRejectLate = require('promise-all-reject-late')
 const runScript = require('@npmcli/run-script')
 const { callLimit: promiseCallLimit } = require('promise-call-limit')
@@ -11,7 +12,7 @@ const { depth: dfwalk } = require('treeverse')
 const { dirname, resolve, relative, join, sep } = require('node:path')
 const { log, time } = require('proc-log')
 const { existsSync } = require('node:fs')
-const { lstat, mkdir, readdir, rm, symlink } = require('node:fs/promises')
+const { lstat, mkdir, readdir, readlink, rm, symlink } = require('node:fs/promises')
 const { moveFile } = require('@npmcli/fs')
 const { subset, intersects } = require('semver')
 const { walkUp } = require('walk-up-path')
@@ -23,6 +24,8 @@ const debug = require('../debug.js')
 const onExit = require('../signal-handling.js')
 const optionalSet = require('../optional-set.js')
 const relpath = require('../relpath.js')
+const { applyPatchToDir, patchIntegrity } = require('../patch.js')
+const { readFile } = require('node:fs/promises')
 const retirePath = require('../retire-path.js')
 const treeCheck = require('../tree-check.js')
 const { defaultLockfileVersion } = require('../shrinkwrap.js')
@@ -124,7 +127,11 @@ module.exports = cls => class Reifier extends cls {
     await this[_diffTrees]()
     await this.#reifyPackages()
     if (linked) {
-      await this.#cleanOrphanedStoreEntries()
+      // The sweep mutates node_modules on disk, so skip it for dry runs and lockfile-only installs (those modes also short-circuit #reifyPackages).
+      // The sweep itself scopes to in-filter workspaces when a filter is active, so it's safe to run for filtered installs too.
+      if (!this.options.dryRun && !this.options.packageLockOnly) {
+        await this.#cleanOrphanedStoreEntries()
+      }
       // swap back in the idealTree
       // so that the lockfile is preserved
       this.idealTree = oldTree
@@ -232,7 +239,7 @@ module.exports = cls => class Reifier extends cls {
     this.actualTree = this.idealTree
     this.idealTree = null
 
-    if (!this.options.global) {
+    if (!this.options.global && !this.options.dryRun) {
       await this.actualTree.meta.save()
       const ignoreScripts = !!this.options.ignoreScripts
       // if we aren't doing a dry run or ignoring scripts and we actually made changes to the dep
@@ -700,17 +707,32 @@ module.exports = cls => class Reifier extends cls {
         ...this.options,
         resolved: node.resolved,
         integrity: node.integrity,
-        _isRoot: node.parent?.isProjectRoot || node.parent?.isWorkspace,
+        // A node counts as "root" for allow-* enforcement if it satisfies at least one valid dependency edge declared by the project root or a workspace.
+        // node.parent is unsafe here: after hoisting, transitive packages can have the project root as their tree parent.
+        // In the linked strategy the store node has no edgesIn, so isolated-reifier precomputes isRootDependency from the source node's edges.
+        _isRoot: node.isRootDependency || [...node.edgesIn].some(e =>
+          e.valid && (e.from?.isProjectRoot || e.from?.isWorkspace)
+        ),
+        // pacote's npa re-parses our `name@URL` spec as type=remote, so allowRemote would mis-fire on registry tarballs.
+        // Override only when we can prove the URL is registry-mediated; see #isRegistryResolvedTarball.
+        ...(this.#isRegistryResolvedTarball(node) ? { allowRemote: 'all' } : {}),
       })
       // store nodes don't use Node class so node.package doesn't get updated
       if (node.isInStore) {
         const { content: pkg } = await PackageJson.normalize(node.path)
         node.package.scripts = pkg.scripts
       }
+      await this.#applyPatch(node)
       return
     }
 
     // node.isLink
+
+    // Tree-only Link: present in the tree for diff/filter participation, never materialized on disk.
+    if (node.isUndeclaredWorkspaceLink) {
+      return
+    }
+
     await rm(node.path, { recursive: true, force: true })
 
     // symlink
@@ -728,10 +750,61 @@ module.exports = cls => class Reifier extends cls {
     return symlink(rel, node.path, 'junction')
   }
 
+  // apply a registered patch to a freshly extracted node, after extract and before rebuild
+  async #applyPatch (node) {
+    if (!node.patched) {
+      return
+    }
+    const { path: patchPath, integrity } = node.patched
+
+    // validate the patch file here too, since reify can run on an ideal tree that skipped resolvePatchedDependencies
+    let contents
+    try {
+      contents = await readFile(resolve(this.path, patchPath))
+    } catch {
+      throw Object.assign(
+        new Error(`patch file not found: ${patchPath}`),
+        { code: 'EPATCHNOTFOUND', path: patchPath, node: node.name }
+      )
+    }
+    if (patchIntegrity(contents) !== integrity) {
+      throw Object.assign(
+        new Error(`patch file ${patchPath} does not match the recorded integrity`),
+        { code: 'EPATCHINTEGRITY', path: patchPath, node: node.name }
+      )
+    }
+
+    try {
+      await applyPatchToDir({ patch: contents, cwd: node.path })
+    } catch (er) {
+      if (this.options.ignorePatchFailures) {
+        // the linked side-store keys a package by its patch, so an unpatched package cannot be represented at a patched key and would be trusted on later installs
+        if (node.isInStore) {
+          throw Object.assign(
+            new Error(`Cannot skip the failed patch for ${node.name} under install-strategy=linked. ` +
+              `Fix the patch or install with a different strategy.`),
+            { code: 'EPATCHFAILED', path: patchPath, node: node.name }
+          )
+        }
+        log.warn('patch', `failed to apply ${patchPath} to ${node.name}: ${er.message}`)
+        // the patch was not applied, so do not record it in the lockfile
+        // the lockfile and package.json now disagree, so warn that npm ci will reject the tree
+        log.warn('patch', `${node.name} was installed unpatched; package.json still declares this patch, so the lockfile is out of sync and \`npm ci\` will fail until the patch is fixed or its patchedDependencies entry is removed`)
+        node.patched = null
+        return
+      }
+      throw er
+    }
+  }
+
   // if the node is optional, then the failure of the promise is nonfatal
   // just add it and its optional set to the trash list.
   [_handleOptionalFailure] (node, p) {
-    return (node.optional ? p.catch(() => {
+    return (node.optional ? p.catch((er) => {
+      // a declared patch must apply or fail loudly, even on an optional dep
+      if (typeof er?.code === 'string' && er.code.startsWith('EPATCH')) {
+        throw er
+      }
       const set = optionalSet(node)
       for (const node of set) {
         log.verbose('reify', 'failed optional dependency', node.path)
@@ -822,6 +895,27 @@ module.exports = cls => class Reifier extends cls {
     wrapper.inventory = actualTree.inventory
 
     return wrapper
+  }
+
+  // When extracting a registry-resolved package, the spec we hand to pacote is name@URL.
+  // pacote re-parses that with npa and gets spec.type === 'remote', so without an override the allow-remote gate would fire on every registry tarball (both =none and =root mis-fire).
+  // Returns true only when we are confident this is a registry-mediated install.
+  #isRegistryResolvedTarball (node) {
+    if (!node.resolved || !node.isRegistryDependency) {
+      return false
+    }
+    try {
+      // Match the effective fetch URL, not the raw lockfile value.
+      // #registryResolved applies replace-registry-host, rewriting a public-registry pin to the configured proxy/mirror so it matches.
+      const resolvedURL = new URL(this.#registryResolved(node.resolved))
+      // pickRegistry only consults spec.scope, so a bare-name (tag) parse is sufficient and avoids a node.version dependency.
+      const registry = new URL(pickRegistry(npa(node.name), this.options))
+      const registryPath = registry.pathname.replace(/\/?$/, '/')
+      return resolvedURL.origin === registry.origin &&
+        (registryPath === '/' || resolvedURL.pathname.startsWith(registryPath))
+    } catch {
+      return false
+    }
   }
 
   #registryResolved (resolved) {
@@ -1281,35 +1375,217 @@ module.exports = cls => class Reifier extends cls {
 
   // After a linked install, scan node_modules/.store/ and remove any directories that are not referenced by the current ideal tree.
   // Store entries become orphaned when dependencies are updated or removed, because the diff never sees the old store keys.
+  // Then sweep the top-level node_modules/ for orphaned symlinks (e.g. an uninstalled dep whose store entry was just removed) so we don't leave dangling links.
   async #cleanOrphanedStoreEntries () {
-    const storeDir = resolve(this.path, 'node_modules', '.store')
+    const nmDir = resolve(this.path, 'node_modules')
+    const storeDir = resolve(nmDir, '.store')
+
+    // Enumerate on-disk store entries as full keys, descending one level into each @scope directory because scoped keys nest as .store/@scope/pkg@version-hash.
     let entries
     try {
-      entries = await readdir(storeDir)
+      const topLevel = await readdir(storeDir, { withFileTypes: true })
+      entries = []
+      for (const ent of topLevel) {
+        if (ent.name.startsWith('@')) {
+          let scoped
+          try {
+            scoped = await readdir(resolve(storeDir, ent.name))
+          } catch {
+            /* istanbul ignore next -- readdir of an entry we just listed should not fail */
+            continue
+          }
+          for (const name of scoped) {
+            entries.push(`${ent.name}/${name}`)
+          }
+        } else {
+          entries.push(ent.name)
+        }
+      }
+    } catch {
+      entries = null
+    }
+
+    // Collect valid store keys and valid top-level links per node_modules directory.
+    // Store entries have location node_modules/.store/{key}/node_modules/{pkg}.
+    // Top-level links have location {prefix}/node_modules/{pkg} or {prefix}/node_modules/@scope/{pkg}, where {prefix} is empty for the root project and the workspace's localLocation for workspace deps.
+    // Locations are normalized to forward slashes here because IsolatedNode/IsolatedLink locations are built with path.join, which uses backslashes on Windows.
+    const validKeys = new Set()
+    const nmDirs = new Map()
+    const NM_PREFIX = 'node_modules/'
+    const STORE_MARKER = '/.store/'
+    for (const child of this.idealTree.children.values()) {
+      const loc = child.location.replace(/\\/g, '/')
+      if (child.isInStore) {
+        // Store location is node_modules/.store/{key}/node_modules/{pkg}.
+        // For a scoped package the key is @scope/pkg@version-hash, which spans two path segments, so reconstruct both instead of taking only the scope.
+        const parts = loc.split('/')
+        const key = parts[2].startsWith('@') ? `${parts[2]}/${parts[3]}` : parts[2]
+        validKeys.add(key)
+        continue
+      }
+      if (!child.isLink) {
+        continue
+      }
+      // Tree-only Links never exist on disk; skipping them lets the sweep remove any stale self-link left by an older npm version.
+      if (child.isUndeclaredWorkspaceLink) {
+        continue
+      }
+      const nmIdx = loc.lastIndexOf(NM_PREFIX)
+      if (nmIdx === -1 || loc.includes(STORE_MARKER)) {
+        continue
+      }
+      const prefix = loc.slice(0, nmIdx)
+      const dir = resolve(this.path, prefix, 'node_modules')
+      const rest = loc.slice(nmIdx + NM_PREFIX.length)
+      let entry
+      if (rest.startsWith('@')) {
+        const [scope, name] = rest.split('/')
+        entry = `${scope}${sep}${name}`
+      } else {
+        entry = rest.split('/')[0]
+      }
+      let set = nmDirs.get(dir)
+      if (!set) {
+        set = new Set()
+        nmDirs.set(dir, set)
+      }
+      set.add(entry)
+    }
+
+    // Determine which node_modules directories to sweep.
+    // For an unfiltered install, sweep the project root and every workspace's node_modules even if no top-level links remain (e.g. last dep was just uninstalled).
+    // For a filtered install (npm install -w <ws>), restrict the sweep to the in-scope workspaces so out-of-scope workspaces are left untouched, mirroring what the diff would do.
+    // When --include-workspace-root is set, the filter scope pulls in root deps too, so the root node_modules is included in the sweep.
+    const filteredNames = this.options.workspaces
+    const isFiltered = Array.isArray(filteredNames) && filteredNames.length > 0
+    if (isFiltered) {
+      const allowedDirs = new Set()
+      for (const ws of this.idealTree.fsChildren) {
+        if (filteredNames.includes(ws.packageName) || filteredNames.includes(ws.name)) {
+          allowedDirs.add(resolve(ws.path, 'node_modules'))
+        }
+      }
+      if (this.options.includeWorkspaceRoot) {
+        allowedDirs.add(nmDir)
+      }
+      for (const dir of [...nmDirs.keys()]) {
+        if (!allowedDirs.has(dir)) {
+          nmDirs.delete(dir)
+        }
+      }
+      for (const dir of allowedDirs) {
+        if (!nmDirs.has(dir)) {
+          nmDirs.set(dir, new Set())
+        }
+      }
+    } else {
+      if (!nmDirs.has(nmDir)) {
+        nmDirs.set(nmDir, new Set())
+      }
+      for (const ws of this.idealTree.fsChildren) {
+        const wsNmDir = resolve(ws.path, 'node_modules')
+        if (!nmDirs.has(wsNmDir)) {
+          nmDirs.set(wsNmDir, new Set())
+        }
+      }
+    }
+
+    if (entries) {
+      const orphaned = entries.filter(e => !validKeys.has(e))
+      if (orphaned.length) {
+        log.silly('reify', 'cleaning orphaned store entries', orphaned)
+        await promiseAllRejectLate(
+          orphaned.map(e =>
+            rm(resolve(storeDir, e), { recursive: true, force: true })
+              .catch(/* istanbul ignore next -- rm with force rarely fails */
+                er => log.warn('cleanup', `Failed to remove orphaned store entry ${e}`, er))
+          )
+        )
+        // Removing the last scoped orphan under a scope leaves an empty @scope directory behind, so prune any scope directory that is now empty.
+        const scopes = new Set(
+          orphaned.filter(e => e.startsWith('@')).map(e => e.split('/')[0])
+        )
+        await promiseAllRejectLate(
+          [...scopes].map(async scope => {
+            const scopeDir = resolve(storeDir, scope)
+            try {
+              const remaining = await readdir(scopeDir)
+              if (!remaining.length) {
+                await rm(scopeDir, { recursive: true, force: true })
+              }
+            } catch {
+              /* istanbul ignore next -- readdir of a scope dir we just listed should not fail */
+            }
+          })
+        )
+      }
+    }
+
+    for (const [dir, valid] of nmDirs) {
+      await this.#cleanOrphanedTopLevelLinks(dir, valid)
+    }
+  }
+
+  // Remove node_modules/ entries that aren't represented in the ideal tree.
+  // Run for the project root and each workspace's node_modules.
+  // The linked diff path can't see these because #buildLinkedActualForDiff derives the actual tree from the ideal, so removed deps are never compared.
+  // Only symlinks whose target resolves inside the project root are removed — that covers store links (node_modules/.store/...) and workspace self-links (e.g. node_modules/<ws> -> ../packages/<ws>) that npm itself created.
+  // Symlinks pointing outside the project (e.g. `npm link foo` without --save targeting the global prefix, or hand-made `ln -s` to an external path) and real directories are preserved.
+  async #cleanOrphanedTopLevelLinks (nmDir, validTopLevel) {
+    const projectPrefix = resolve(this.path) + sep
+    let dirents
+    try {
+      dirents = await readdir(nmDir, { withFileTypes: true })
     } catch {
       return
     }
 
-    // Collect valid store keys from the isolated ideal tree (location: node_modules/.store/{key}/node_modules/{pkg})
-    const validKeys = new Set()
-    for (const child of this.idealTree.children.values()) {
-      if (child.isInStore) {
-        const key = child.location.split(sep)[2]
-        validKeys.add(key)
+    const isOurOrphan = async (linkPath) => {
+      let target
+      try {
+        target = await readlink(linkPath)
+      } catch {
+        /* istanbul ignore next -- readlink of an entry we just listed as a symlink should not fail */
+        return false
+      }
+      return resolve(dirname(linkPath), target).startsWith(projectPrefix)
+    }
+
+    const orphaned = []
+    for (const ent of dirents) {
+      // skip npm-managed entries (.bin, .store, .package-lock.json, etc)
+      if (ent.name.startsWith('.')) {
+        continue
+      }
+      if (ent.name.startsWith('@')) {
+        let scoped
+        try {
+          scoped = await readdir(resolve(nmDir, ent.name), { withFileTypes: true })
+        } catch {
+          /* istanbul ignore next -- readdir of an entry we just listed should not fail */
+          continue
+        }
+        for (const pkgEnt of scoped) {
+          const key = `${ent.name}${sep}${pkgEnt.name}`
+          if (!validTopLevel.has(key) && pkgEnt.isSymbolicLink() && await isOurOrphan(resolve(nmDir, key))) {
+            orphaned.push(key)
+          }
+        }
+      } else if (!validTopLevel.has(ent.name) && ent.isSymbolicLink() && await isOurOrphan(resolve(nmDir, ent.name))) {
+        orphaned.push(ent.name)
       }
     }
 
-    const orphaned = entries.filter(e => !validKeys.has(e))
     if (!orphaned.length) {
       return
     }
 
-    log.silly('reify', 'cleaning orphaned store entries', orphaned)
+    log.silly('reify', 'cleaning orphaned top-level links', orphaned)
     await promiseAllRejectLate(
-      orphaned.map(e =>
-        rm(resolve(storeDir, e), { recursive: true, force: true })
+      orphaned.map(name =>
+        rm(resolve(nmDir, name), { recursive: true, force: true })
           .catch(/* istanbul ignore next -- rm with force rarely fails */
-            er => log.warn('cleanup', `Failed to remove orphaned store entry ${e}`, er))
+            er => log.warn('cleanup', `Failed to remove orphaned link ${name}`, er))
       )
     )
   }
@@ -1397,7 +1673,7 @@ module.exports = cls => class Reifier extends cls {
           // save the git+https url if it has auth; otherwise, shortcut
           const h = req.hosted
           const opt = { noCommittish: false }
-          if (h.https && h.auth) {
+          if (h.https && (h.auth || h.default === 'https')) {
             newSpec = `git+${h.https(opt)}`
           } else {
             newSpec = h.shortcut(opt)
@@ -1552,6 +1828,8 @@ module.exports = cls => class Reifier extends cls {
           // field so defaulting this to an empty array would add that field to
           // every package.json file.
           bundleDependencies,
+          // resolvePatchedDependencies drops entries orphaned by uninstall; persist that removal
+          patchedDependencies,
         } = tree.package
 
         pkgJson.update({
@@ -1560,6 +1838,7 @@ module.exports = cls => class Reifier extends cls {
           optionalDependencies,
           peerDependencies,
           bundleDependencies,
+          patchedDependencies,
         })
         await pkgJson.save()
       }

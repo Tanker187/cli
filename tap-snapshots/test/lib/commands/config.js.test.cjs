@@ -10,13 +10,19 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "cache": "{CACHE}",
   "color": {COLOR},
   "json": true,
-  "projectloaded": "yes",
-  "userloaded": "yes",
-  "globalloaded": "yes",
+  "tag": "from-project",
+  "init-author-name": "from-user",
+  "init-license": "from-global",
   "access": null,
   "all": false,
   "allow-same-version": false,
-  "allow-git": "all",
+  "allow-directory": "all",
+  "allow-file": "all",
+  "allow-git": "none",
+  "allow-remote": "none",
+  "allow-scripts": [
+    ""
+  ],
   "also": null,
   "audit": true,
   "audit-level": null,
@@ -34,6 +40,7 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "cidr": null,
   "commit-hooks": true,
   "cpu": null,
+  "dangerously-allow-all-scripts": false,
   "depth": null,
   "description": true,
   "dev": false,
@@ -51,6 +58,7 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "expect-result-count": null,
   "expect-results": null,
   "expires": null,
+  "extension-file": null,
   "fetch-retries": 2,
   "fetch-retry-factor": 10,
   "fetch-retry-maxtimeout": 60000,
@@ -64,19 +72,19 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "git-tag-version": true,
   "global": false,
   "globalconfig": "{CWD}/global/etc/npmrc",
+  "global-ignore-file": "{CWD}/global/etc/npmignore",
   "global-style": false,
   "heading": "npm",
   "https-proxy": null,
   "if-present": false,
+  "ignore-extension": false,
   "ignore-scripts": false,
   "include": [],
   "include-staged": false,
   "include-workspace-root": false,
   "include-attestations": false,
   "init-author-email": "",
-  "init-author-name": "",
   "init-author-url": "",
-  "init-license": "ISC",
   "init-module": "{CWD}/home/.npm-init.js",
   "init-type": "commonjs",
   "init-version": "1.0.0",
@@ -84,7 +92,7 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "init.author.email": "",
   "init.author.name": "",
   "init.author.url": "",
-  "init.license": "ISC",
+  "init.license": "",
   "init.module": "{CWD}/home/.npm-init.js",
   "init.version": "1.0.0",
   "install-links": false,
@@ -105,6 +113,7 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "maxsockets": 15,
   "message": "%s",
   "min-release-age": null,
+  "min-release-age-exclude": [],
   "node-gyp": "{CWD}/node_modules/node-gyp/bin/node-gyp.js",
   "node-options": null,
   "noproxy": [
@@ -123,7 +132,15 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "package-lock-only": false,
   "pack-destination": ".",
   "packages": [],
+  "patches-dir": "patches",
+  "allow-unused-patches": false,
+  "ignore-patch-failures": false,
+  "edit-dir": null,
+  "ignore-existing": false,
+  "keep-edit-dir": false,
   "parseable": false,
+  "allow-scripts-pending": false,
+  "allow-scripts-pin": true,
   "prefer-dedupe": false,
   "prefer-offline": false,
   "prefer-online": false,
@@ -163,10 +180,11 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "sign-git-commit": false,
   "sign-git-tag": false,
   "strict-peer-deps": false,
+  "strict-allow-scripts": false,
   "strict-ssl": true,
-  "tag": "latest",
   "tag-version-prefix": "v",
   "timing": false,
+  "to": null,
   "umask": 0,
   "unicode": false,
   "update-notifier": true,
@@ -191,8 +209,15 @@ exports[`test/lib/commands/config.js TAP config list --long > output matches sna
 _auth = (protected)
 access = null
 all = false
-allow-git = "all"
+allow-directory = "all"
+allow-file = "all"
+allow-git = "none"
+allow-remote = "none"
 allow-same-version = false
+allow-scripts = [""]
+allow-scripts-pending = false
+allow-scripts-pin = true
+allow-unused-patches = false
 also = null
 audit = true
 audit-level = null
@@ -212,6 +237,7 @@ cidr = null
 ; color = {COLOR}
 commit-hooks = true
 cpu = null
+dangerously-allow-all-scripts = false
 depth = null
 description = true
 dev = false
@@ -224,11 +250,13 @@ diff-src-prefix = "a/"
 diff-text = false
 diff-unified = 3
 dry-run = false
+edit-dir = null
 editor = "{EDITOR}"
 engine-strict = false
 expect-result-count = null
 expect-results = null
 expires = null
+extension-file = null
 fetch-retries = 2
 fetch-retry-factor = 10
 fetch-retry-maxtimeout = 60000
@@ -241,20 +269,24 @@ fund = true
 git = "git"
 git-tag-version = true
 global = false
+global-ignore-file = "{CWD}/global/etc/npmignore"
 global-style = false
 globalconfig = "{CWD}/global/etc/npmrc"
 heading = "npm"
 https-proxy = null
 if-present = false
+ignore-existing = false
+ignore-extension = false
+ignore-patch-failures = false
 ignore-scripts = false
 include = []
 include-attestations = false
 include-staged = false
 include-workspace-root = false
 init-author-email = ""
-init-author-name = ""
+; init-author-name = "" ; overridden by user
 init-author-url = ""
-init-license = "ISC"
+; init-license = "" ; overridden by global
 init-module = "{CWD}/home/.npm-init.js"
 init-private = false
 init-type = "commonjs"
@@ -262,12 +294,13 @@ init-version = "1.0.0"
 init.author.email = ""
 init.author.name = ""
 init.author.url = ""
-init.license = "ISC"
+init.license = ""
 init.module = "{CWD}/home/.npm-init.js"
 init.version = "1.0.0"
 install-links = false
 install-strategy = "hoisted"
 json = false
+keep-edit-dir = false
 key = null
 legacy-bundling = false
 legacy-peer-deps = false
@@ -283,6 +316,7 @@ logs-max = 10
 maxsockets = 15
 message = "%s"
 min-release-age = null
+min-release-age-exclude = []
 name = null
 node-gyp = "{CWD}/node_modules/node-gyp/bin/node-gyp.js"
 node-options = null
@@ -306,6 +340,7 @@ packages-all = false
 packages-and-scopes-permission = null
 parseable = false
 password = (protected)
+patches-dir = "patches"
 prefer-dedupe = false
 prefer-offline = false
 prefer-online = false
@@ -340,11 +375,13 @@ searchstaleness = 900
 shell = "{SHELL}"
 sign-git-commit = false
 sign-git-tag = false
+strict-allow-scripts = false
 strict-peer-deps = false
 strict-ssl = true
-tag = "latest"
+; tag = "latest" ; overridden by project
 tag-version-prefix = "v"
 timing = false
+to = null
 token-description = null
 umask = 0
 unicode = false
@@ -363,15 +400,15 @@ yes = null
 
 ; "global" config from {CWD}/global/etc/npmrc
 
-globalloaded = "yes"
+init-license = "from-global"
 
 ; "user" config from {CWD}/home/.npmrc
 
-userloaded = "yes"
+init-author-name = "from-user"
 
 ; "project" config from {CWD}/prefix/.npmrc
 
-projectloaded = "yes"
+tag = "from-project"
 
 ; "cli" config from command line options
 
@@ -383,19 +420,17 @@ long = true
 exports[`test/lib/commands/config.js TAP config list > output matches snapshot 1`] = `
 ; "global" config from {CWD}/global/etc/npmrc
 
-globalloaded = "yes"
+init-license = "from-global"
 
 ; "user" config from {CWD}/home/.npmrc
 
 _auth = (protected)
 //nerfdart:_auth = (protected)
-//nerfdart:auth = (protected)
-auth = (protected)
-userloaded = "yes"
+init-author-name = "from-user"
 
 ; "project" config from {CWD}/prefix/.npmrc
 
-projectloaded = "yes"
+tag = "from-project"
 
 ; "cli" config from command line options
 

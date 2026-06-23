@@ -19,9 +19,13 @@ class IsolatedNode {
   integrity = null
   inventory = new IsolatedInventory()
   isInStore = false
+  inBundle = false
+  isRegistryDependency = false
+  isRootDependency = false
   linksIn = new Set()
   meta = { loadedFromDisk: false }
   optional = false
+  patched = null
   parent = null
   root = null
   tops = new Set()
@@ -46,8 +50,20 @@ class IsolatedNode {
     if (options.isInStore) {
       this.isInStore = true
     }
+    if (options.inBundle) {
+      this.inBundle = true
+    }
+    if (options.isRegistryDependency) {
+      this.isRegistryDependency = true
+    }
+    if (options.isRootDependency) {
+      this.isRootDependency = true
+    }
     if (options.optional) {
       this.optional = true
+    }
+    if (options.patched) {
+      this.patched = options.patched
     }
   }
 
@@ -101,6 +117,11 @@ class IsolatedNode {
     const { hasInstallScript, scripts } = this.package
     const { install, preinstall, postinstall } = scripts || {}
     return !!(hasInstallScript || install || preinstall || postinstall)
+  }
+
+  /* istanbul ignore next -- emulate lib/node.js */
+  get packageName () {
+    return this.package.name || null
   }
 
   get version () {
