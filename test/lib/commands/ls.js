@@ -5425,6 +5425,7 @@ t.test('ls --install-strategy=linked', async t => {
     const output = cleanCwd(result())
     t.notMatch(output, /UNMET DEPENDENCY/, 'should not report undeclared workspace as UNMET DEPENDENCY')
     t.match(output, /workspace-a/, 'should list declared workspace')
+    t.match(output, /workspace-b/, 'should list undeclared workspace (npm/cli#9618)')
   })
 
   t.test('should not report devDeps of store packages as UNMET DEPENDENCY', async t => {
@@ -5460,6 +5461,37 @@ t.test('ls --install-strategy=linked', async t => {
     const output = cleanCwd(result())
     t.notMatch(output, /UNMET DEPENDENCY/, 'should not report devDeps of store packages')
     t.match(output, /nopt/, 'should list the dependency')
+  })
+
+  t.test('should not report devDeps of linked transitive packages as UNMET DEPENDENCY', async t => {
+    const { result, ls } = await mockLs(t, {
+      config: {
+        'install-strategy': 'linked',
+        all: true,
+      },
+      prefixDir: {
+        'package.json': JSON.stringify({
+          name: 'test-linked-transitive',
+          version: '1.0.0',
+          dependencies: { 'pkg-a': 'file:./pkg-a' },
+        }),
+        'pkg-a': {
+          'package.json': JSON.stringify({
+            name: 'pkg-a',
+            version: '1.0.0',
+            devDependencies: { tap: '^16.0.0' },
+          }),
+        },
+        node_modules: {
+          'pkg-a': t.fixture('symlink', '../pkg-a'),
+        },
+      },
+    })
+    await ls.exec([])
+    const output = cleanCwd(result())
+    t.notMatch(output, /UNMET DEPENDENCY/, 'should not report devDeps of linked transitive packages')
+    t.notMatch(output, /tap/, 'should not traverse devDeps of linked transitive packages')
+    t.match(output, /pkg-a/, 'should list the dependency')
   })
 
   t.test('should still report declared workspace as UNMET DEPENDENCY when missing', async t => {
